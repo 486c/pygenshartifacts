@@ -111,11 +111,20 @@ class Parser():
                         
                         for stat_name in stats_names:
                             if fuzz.WRatio(stat_name, line) > 80:
-                                lines.append(line)
+                                if line not in lines:
+                                    lines.append(line)
+                                else:
+                                    pass
                             elif fuzz.WRatio(stat_name, line[1:]) > 80:
-                                lines.append(line)
+                                if line not in lines:
+                                    lines.append(line)
+                                else:
+                                    pass
                             elif fuzz.WRatio(stat_name, line[2:]) > 80:
-                                lines.append(line)
+                                if line not in lines:
+                                    lines.append(line)
+                                else:
+                                    pass
                             else:
                                 pass
 
