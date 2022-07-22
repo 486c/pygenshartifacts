@@ -1,33 +1,19 @@
-import os
-
+import io
 import cv2
 import numpy as np
 import pytesseract
-import requests
 from PIL import Image, ImageDraw, ImageFont
-from fuzzywuzzy import fuzz
 
 from typing import Optional
 from typing import Union
 from typing import Any
-import io
 
-""" Clear value from unexpected symbols """
-def clear_value(value: str) -> str:
-    temp = value
-    temp = temp.strip()
-    temp = temp.replace('%', '')
-    temp = temp.replace('.', '')
+import string
 
-    temp = temp.replace(',', '.')
-    return temp
-
-""" Get value from cleared value """
-def get_value(value: str) -> Any:
-    if value.__contains__("."):
-        return float(value)
-    else:
-        return int(value)
+allowed_symbols = {
+    'eng': 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ%+,.0123456789 ',
+    'rus': 'абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ%+,.0123456789 ',
+}
 
 artifacts_sets = {
     'eng': [
@@ -57,6 +43,39 @@ stats_names_dicts = {
     }
 }
 
+""" Clear stats value from unexpected symbols """
+def clear_value(value: str) -> str:
+    temp = value
+    temp = temp.strip()
+    temp = temp.replace('%', '')
+
+    if ',' in temp:
+        temp = temp.replace('.', '')
+
+    temp = temp.replace(',', '.')
+    return temp
+
+""" Get value from cleared value """
+def get_value(value: str) -> Any:
+    if value.__contains__("."):
+        try:
+            return float(value)
+        except:
+            return None
+    else:
+        try:
+            return int(value)
+        except:
+            return None
+
+""" Reconstructs line with only allowed symbols """
+def clear_line(value: str, lang: str) -> str:
+    temp = ""
+    for ch in value:
+        if ch in allowed_symbols[lang]:
+            temp += ch
+    return temp.strip()
+
 class Artifact:
     def __init__(self):
         self.type: str = ""
@@ -69,20 +88,31 @@ class Artifact:
 
         for index, item in enumerate(text):
             for stat_name in stats_names_dicts[lang]:
+                # Clear string from not wanted symbols
+                cleared_item = clear_line(item, lang)
+
                 # Check if item is stat 
-                if item.startswith(stat_name):
-                    splitted_stat = item.split("+")
+                if cleared_item.startswith(stat_name):
+                    splitted_stat = cleared_item.split("+")
                     
                     # Check if item is substat
                     if len(splitted_stat) == 2:
                         stat_value = clear_value(splitted_stat[1])
-                        cls.sub_stats[stat_name] = get_value(stat_value)
-                        continue
+                        v = get_value(stat_value)
+                        if v is not None:
+                            cls.sub_stats[stat_name] = v
+                            continue
+
+                    # Check if item is main stat
                     else:
-                        #TODO out of range
+                        if index+1 > len(text):
+                            continue
+
                         stat_value = clear_value(text[index+1])
-                        cls.stat[stat_name] = get_value(stat_value)
-                # Check if item is artifact set name
+                        v = get_value(stat_value)
+                        if v is not None:
+                            cls.stat[stat_name] = v
+                            continue
         return cls
 
 
@@ -96,11 +126,12 @@ class ArtifactsParser:
     def get_text_from_image(self, image: Union[str, io.BytesIO], lang: str) -> Optional[dict]:
         content: bytearray = bytearray()
 
-        if isinstance(image, str): # If image is path
+        # If image is path
+        if isinstance(image, str): 
             with open(image, "rb") as f:
                 content = bytearray(f.read())
-
-        if isinstance(image, io.BytesIO): # If image is bytes
+        # If image is bytes
+        if isinstance(image, io.BytesIO): 
             content = bytearray(image)
 
         img = cv2.imdecode(np.asarray(content, dtype=np.uint8), -1)
@@ -115,59 +146,3 @@ class ArtifactsParser:
                 pass
 
         return text
-
-    def sort_text(self, text: str):
-        max_roll = {
-            'HP %': '5.80%',
-            'HP': '299',
-            'Сила атаки %': '5.80%',
-            'Сила атаки': '19',
-            'Защита %': '7.30%',
-            'Защита': '23',
-            'Мастерство стихий': '23',
-            'Восст. энергии %': '6.50%',
-            'Шанс крит. попадания %': '3.90%',
-            'Крит. урон %': '7.80%'
-        }
-        stats_in_art = {}
-        stats_quality = {}
-        stats_vs_max_roll = {}
-    
-        to_send = ''
-    
-        for stat in text:
-            stat_list = stat.split('+')
-    
-            stat_value = \
-                stat_list[1].strip().replace(',', '.').replace('З', '3').replace('?', '7').replace('П', '11').replace('|', '1').replace('О', '0').replace('‚', '.').replace('/', '.').replace(' ', '').replace('х', '').replace('x', '').replace('..', '.')
-            stat_name = \
-                stat_list[0].strip() + ' %' if '%' in stat_value else stat_list[0].strip()
-            stat_value = \
-                float(stat_value.replace('%', '').strip())
-    
-            if stat_value < float(max_roll[stat_name].replace('%', '')) / 2:
-                stat_value += 10
-    
-            stats_in_art[stat_name] = stat_value
-    
-        for stat_name, stat_value in stats_in_art.items():
-            max_roll_for_stat = float(max_roll[stat_name].replace('%', ''))
-    
-            stats_quality[stat_name] = float('%.2f' % (stat_value / (max_roll_for_stat * 6) * 100))
-    
-        for stat_name, stat_value in stats_in_art.items():
-            max_roll_for_stat = float(max_roll[stat_name].replace('%', ''))
-    
-            stats_vs_max_roll[stat_name] = float('%.2f' % (stat_value / max_roll_for_stat * 100))
-    
-        for stat_name, stat_value in stats_in_art.items():
-            to_send += f'{stat_name.replace("%", "")} - {str(stat_value) + "%" if "%" in stat_name else stat_value} [ {stats_quality[stat_name]}% ]\n'
-    
-        to_send += '\n'
-    
-        to_send += 'Качество артефакта - %.2f' % (sum(stats_vs_max_roll.values()) / 9) + '%\n'
-        to_send += f'Крит. масса - {stats_in_art.get("Шанс крит. попадания %", 0) * 2 + stats_in_art.get("Крит. урон %", 0)}\n'
-        to_send += 'Качество крита - %.2f' % ((stats_vs_max_roll.get('Шанс крит. попадания %', 0) + stats_vs_max_roll.get('Крит. урон %', 0)) / 7) + '%'
-    
-        return to_send
-
