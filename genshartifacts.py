@@ -59,17 +59,14 @@ def clear_value(value: str) -> str:
     return temp
 
 """ Get value from cleared value """
-def get_value(value: str) -> Any:
-    if value.__contains__("."):
-        try:
+def get_value(value: str) -> Optional[int, float]:
+    try:
+        if value.__contains__("."):
             return float(value)
-        except:
-            return None
-    else:
-        try:
+        else:
             return int(value)
-        except:
-            return None
+    except:
+        return None
 
 """ Reconstructs line with only allowed symbols """
 def clear_line(value: str, lang: str) -> str:
@@ -80,13 +77,13 @@ def clear_line(value: str, lang: str) -> str:
     return temp.strip()
 
 class Artifact:
-    def __init__(self):
-        self.type: str = ""
+    def __init__(self) -> None:
+        self.type: Optional[str] = None
         self.main_stat: dict = {} # Main stat
         self.sub_stats: dict = {} # All substats
 
     @classmethod
-    def from_raw_text(cls, text: List[str], lang: str):
+    def from_raw_text(cls, text: List[str], lang: str) -> Artifact:
         cls = cls()
 
         for index, item in enumerate(text):
@@ -100,22 +97,24 @@ class Artifact:
                     
                     # Check if item is substat
                     if len(splitted_stat) == 2:
-                        stat_value = clear_value(splitted_stat[1])
-                        v = get_value(stat_value)
-                        if v is not None:
-                            cls.sub_stats[stats_names_dicts[lang][stat_name]] = v
-                            continue
+                        cleared_value = clear_value(splitted_stat[1])
+                        value = get_value(cleared_value)
+                        if value is not None:
+                            cls.sub_stats[stats_names_dicts[lang][stat_name]] = value
+                            break
 
                     # Check if item is main stat
                     if len(splitted_stat) < 2:
                         if index+1 > len(text):
                             continue
 
-                        stat_value = clear_value(text[index+1])
-                        v = get_value(stat_value)
-                        if v is not None:
-                            cls.main_stat[stats_names_dicts[lang][stat_name]] = v
-                            continue
+                        cleared_value = clear_value(text[index+1])
+                        value = get_value(cleared_value)
+                        if value is not None:
+                            cls.main_stat[stats_names_dicts[lang][stat_name]] = value
+                            break 
+
+                # Check if item is artifact set
         return cls
 
 
